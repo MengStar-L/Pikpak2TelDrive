@@ -66,7 +66,6 @@ target_path = "/"                   # TelDrive 目标路径
 [general]
 max_retries = 3                     # 失败重试次数
 auto_delete = true                  # 上传后自动删除本地文件
-max_tasks = 3                       # 最大同时任务数
 ```
 
 ### 4. 确保 aria2 已运行

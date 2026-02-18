@@ -52,7 +52,6 @@ class GeneralSettings(BaseModel):
     """通用设置"""
     max_retries: int = 3
     auto_delete: bool = True
-    max_tasks: int = 3
 
 
 class AllSettings(BaseModel):

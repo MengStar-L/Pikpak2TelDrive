@@ -34,8 +34,7 @@ DEFAULT_CONFIG = {
     },
     "general": {
         "max_retries": 3,
-        "auto_delete": True,
-        "max_tasks": 3
+        "auto_delete": True
     }
 }
 

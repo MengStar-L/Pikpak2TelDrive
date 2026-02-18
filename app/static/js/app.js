@@ -551,7 +551,6 @@ async function loadAndFillSettings() {
         document.getElementById('td-target-path').value = settings.teldrive?.target_path || '/';
         // General
         document.getElementById('gen-max-retries').value = settings.general?.max_retries || 3;
-        document.getElementById('gen-max-tasks').value = settings.general?.max_tasks || 3;
         document.getElementById('gen-auto-delete').checked = settings.general?.auto_delete !== false;
     } catch (e) {
         showToast('加载设置失败: ' + e.message, 'error');
@@ -578,8 +577,7 @@ function collectSettings() {
         },
         general: {
             max_retries: parseInt(document.getElementById('gen-max-retries').value) || 3,
-            auto_delete: document.getElementById('gen-auto-delete').checked,
-            max_tasks: parseInt(document.getElementById('gen-max-tasks').value) || 3
+            auto_delete: document.getElementById('gen-auto-delete').checked
         }
     };
 }

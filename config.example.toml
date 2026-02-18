@@ -20,4 +20,3 @@ target_path = "/"
 [general]
 max_retries = 3
 auto_delete = true
-max_tasks = 3
