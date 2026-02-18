@@ -710,35 +710,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 测试路径一致性
-    document.getElementById('btn-test-path').addEventListener('click', async () => {
-        const btn = document.getElementById('btn-test-path');
-        const resultEl = document.getElementById('path-test-result');
-        resultEl.className = 'test-result';
-        resultEl.style.display = 'none';
-        btn.disabled = true;
-        btn.textContent = '检查中...';
-
-        try {
-            const settings = collectSettings();
-            await saveSettings(settings);
-        } catch (e) { /* 忽略 */ }
-
-        try {
-            const result = await apiCall('/api/settings/test/path', { method: 'POST' });
-            resultEl.className = `test-result ${result.success ? 'success' : 'error'}`;
-            resultEl.textContent = result.message;
-            resultEl.style.display = 'block';
-        } catch (e) {
-            resultEl.className = 'test-result error';
-            resultEl.textContent = '测试失败: ' + e.message;
-            resultEl.style.display = 'block';
-        } finally {
-            btn.disabled = false;
-            btn.textContent = '检查路径一致性';
-        }
-    });
-
     // 键盘快捷键
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeModal();
