@@ -109,6 +109,44 @@ systemctl status aria2teldrive
 
 看到 `active (running)` 即表示部署成功 ✅
 
+## 更新 / 重新安装
+
+当需要更新到最新版本时，执行以下步骤：
+
+```bash
+# 1. 进入项目目录
+cd /opt/Aria2TelDrive
+
+# 2. 拉取最新代码
+git pull
+
+# 3. 激活虚拟环境并更新依赖
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 4. 重启服务
+systemctl restart aria2teldrive
+```
+
+如果需要完全重新安装（例如 Python 版本变更或环境损坏）：
+
+```bash
+cd /opt/Aria2TelDrive
+
+# 删除旧虚拟环境
+rm -rf venv
+
+# 重新创建并安装
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 重启服务
+systemctl restart aria2teldrive
+```
+
+> **注意**：`config.toml` 和 `tasks.db` 不会被 `git pull` 覆盖，配置和任务记录会保留。
+
 ## 常用命令
 
 ```bash

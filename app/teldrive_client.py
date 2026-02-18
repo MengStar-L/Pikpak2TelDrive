@@ -28,6 +28,11 @@ CHUNK_SIZE_MAP = {
 class TelDriveClient:
     """TelDrive REST API 客户端"""
 
+    # 默认超时（普通 API 请求）
+    DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=120, connect=30, sock_read=60)
+    # 上传超时（单个 chunk 可能很大，给足时间）
+    UPLOAD_TIMEOUT = aiohttp.ClientTimeout(total=600, connect=30, sock_read=300)
+
     def __init__(self, api_host: str = "http://localhost:8080",
                  access_token: str = "", channel_id: int = 0,
                  chunk_size: str = "500M", upload_concurrency: int = 4,
@@ -54,7 +59,7 @@ class TelDriveClient:
     async def test_connection(self) -> dict:
         """测试 TelDrive 连接"""
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=self.DEFAULT_TIMEOUT) as session:
                 async with session.get(
                     f"{self.api_host}/api/auth/session",
                     headers=self._get_headers()
@@ -83,7 +88,7 @@ class TelDriveClient:
 
     async def create_directory(self, path: str) -> dict:
         """创建目录 - POST /api/files/mkdir"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.DEFAULT_TIMEOUT) as session:
             async with session.post(
                 f"{self.api_host}/api/files/mkdir",
                 headers={**self._get_headers(), "Content-Type": "application/json"},
@@ -98,7 +103,7 @@ class TelDriveClient:
 
     async def list_files(self, path: str = "/") -> list:
         """列出目录文件"""
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.DEFAULT_TIMEOUT) as session:
             async with session.get(
                 f"{self.api_host}/api/files",
                 headers=self._get_headers(),
@@ -494,7 +499,7 @@ class TelDriveClient:
             except Exception:
                 pass
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.UPLOAD_TIMEOUT) as session:
             try:
                 # 步骤 1: 查找并删除同名文件（对标 driver.go Put 中的逻辑）
                 existing_file = await self._find_file(session, teldrive_path, filename)

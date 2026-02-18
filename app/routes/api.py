@@ -77,3 +77,15 @@ async def delete_task(task_id: str):
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["message"])
     return result
+
+
+@router.post("/tasks/clear-completed")
+async def clear_completed_tasks():
+    """清除所有已完成的任务"""
+    tasks = await task_manager.get_all_tasks()
+    count = 0
+    for t in tasks:
+        if t["status"] in ("completed", "cancelled"):
+            await task_manager.delete_task(t["task_id"])
+            count += 1
+    return {"success": True, "message": f"已清除 {count} 个任务"}

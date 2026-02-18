@@ -246,8 +246,10 @@ function handleWSMessage(msg) {
 
         case 'global_stat':
             if (msg.data) {
-                const speed = formatSpeed(msg.data.download_speed || 0);
-                document.getElementById('stat-speed').textContent = speed;
+                const dlSpeed = formatSpeed(msg.data.download_speed || 0);
+                document.getElementById('stat-speed').textContent = dlSpeed;
+                const ulSpeed = formatSpeed(msg.data.upload_speed || 0);
+                document.getElementById('stat-upload-speed').textContent = ulSpeed;
             }
             break;
 
@@ -285,9 +287,10 @@ function renderTasks() {
         }
     });
 
-    // 最近任务（最多 5 条）
+    // 最近任务：只显示正在进行的任务（downloading/uploading）
     recent.innerHTML = '';
-    tasks.slice(0, 5).forEach(task => {
+    const activeTasks = tasks.filter(t => t.status === 'downloading' || t.status === 'uploading');
+    activeTasks.slice(0, 5).forEach(task => {
         recent.appendChild(createTaskElement(task, 'recent-task'));
     });
 
@@ -374,6 +377,7 @@ function buildTaskHTML(task) {
             <button class="btn btn-sm btn-danger" data-action="delete" title="删除">🗑</button>`;
     } else if (status === 'uploading') {
         actionsHTML = `
+            <button class="btn btn-sm btn-outline" data-action="retry" title="重试上传">↻</button>
             <button class="btn btn-sm btn-danger" data-action="cancel" title="取消">✕</button>`;
     }
 
@@ -420,7 +424,9 @@ function renderTaskItem(task) {
 
 function updateRecentTasks() {
     const recent = document.getElementById('recent-tasks');
-    const tasks = Object.values(state.tasks).slice(0, 5);
+    const tasks = Object.values(state.tasks)
+        .filter(t => t.status === 'downloading' || t.status === 'uploading')
+        .slice(0, 5);
     if (tasks.length === 0) {
         recent.innerHTML = `<div class="empty-state">
             <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
@@ -624,6 +630,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // 添加任务按钮
     document.getElementById('btn-add-task').addEventListener('click', openModal);
     document.getElementById('btn-add-task-dash').addEventListener('click', openModal);
+
+    // 清除已完成任务
+    document.getElementById('btn-clear-completed').addEventListener('click', async () => {
+        const completedCount = Object.values(state.tasks)
+            .filter(t => t.status === 'completed' || t.status === 'cancelled').length;
+        if (completedCount === 0) {
+            showToast('没有已完成的任务', 'info');
+            return;
+        }
+        if (!confirm(`确认清除 ${completedCount} 个已完成/已取消的任务？`)) return;
+        try {
+            const result = await apiCall('/api/tasks/clear-completed', { method: 'POST' });
+            showToast(result.message, 'success');
+            fetchAllTasks();
+        } catch (e) {
+            showToast('清除失败: ' + e.message, 'error');
+        }
+    });
 
     // 弹窗
     document.getElementById('modal-close').addEventListener('click', closeModal);

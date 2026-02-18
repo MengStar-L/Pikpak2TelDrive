@@ -79,6 +79,20 @@ class TaskManager:
         for t in all_tasks:
             if t.get("aria2_gid"):
                 self._known_gids.add(t["aria2_gid"])
+
+        # 恢复僵死的 uploading 任务（应用重启后 uploading 状态不会自动恢复）
+        for t in all_tasks:
+            if t["status"] == "uploading":
+                task_id = t["task_id"]
+                local_path = t.get("local_path", "")
+                if local_path and os.path.exists(local_path):
+                    logger.info(f"恢复僵死的上传任务: {task_id} ({t.get('filename', '?')})")
+                    asyncio.create_task(self._retry_upload(task_id))
+                else:
+                    logger.warning(f"僵死上传任务 {task_id} 本地文件不存在，标记失败")
+                    await db.update_task(task_id, status="failed",
+                                         error="上传中断且本地文件不存在")
+
         self._running = True
         self._monitor_task = asyncio.create_task(self._monitor_loop())
         logger.info("任务管理器已启动")
@@ -362,9 +376,17 @@ class TaskManager:
                     await db.update_task(task_id, upload_progress=progress)
                     await self._broadcast_task_update(task_id)
 
-        result = await self.teldrive.upload_file_chunked(
-            local_path, teldrive_path, progress_callback
-        )
+        # 整体超时保护：防止上传无限挂起 (30 分钟)
+        upload_timeout = self.config["general"].get("max_retries", 3) * 600
+        try:
+            result = await asyncio.wait_for(
+                self.teldrive.upload_file_chunked(
+                    local_path, teldrive_path, progress_callback
+                ),
+                timeout=upload_timeout
+            )
+        except asyncio.TimeoutError:
+            raise Exception(f"上传超时（超过 {upload_timeout}s）")
 
         if result.get("success"):
             await db.update_task(task_id, status="completed",
@@ -467,17 +489,37 @@ class TaskManager:
             return {"success": False, "message": str(e)}
 
     async def retry_task(self, task_id: str) -> dict:
-        """重试失败的任务"""
+        """重试失败/卡住的任务"""
         task = await db.get_task(task_id)
         if not task:
             return {"success": False, "message": "任务不存在"}
-        if task["status"] != "failed":
-            return {"success": False, "message": "只能重试失败的任务"}
+        if task["status"] not in ("failed", "uploading"):
+            return {"success": False, "message": "只能重试失败或上传中的任务"}
 
+        # 如果本地文件已存在且下载完成，直接重试上传
+        local_path = task.get("local_path", "")
+        upload_dir = self.config["teldrive"].get("upload_dir", "")
+        if upload_dir and local_path:
+            download_dir = get_download_dir(self.config)
+            norm_local = os.path.normpath(local_path)
+            norm_dl = os.path.normpath(download_dir)
+            if norm_local.startswith(norm_dl):
+                rel = os.path.relpath(norm_local, norm_dl)
+                mapped_path = os.path.join(upload_dir, rel)
+            else:
+                mapped_path = os.path.join(upload_dir, os.path.basename(local_path))
+            if os.path.exists(mapped_path):
+                local_path = mapped_path
+
+        if local_path and os.path.exists(local_path):
+            # 文件已存在，直接重试上传
+            asyncio.create_task(self._retry_upload(task_id))
+            return {"success": True, "message": "正在重试上传"}
+
+        # 否则需要重新下载
         if not task.get("url"):
-            return {"success": False, "message": "无法重试：缺少下载 URL"}
+            return {"success": False, "message": "无法重试：缺少下载 URL 且本地文件不存在"}
 
-        # 重新提交给 aria2
         download_dir = self.config["aria2"].get("download_dir", "./downloads")
         options = {"dir": download_dir}
         if task.get("filename"):
@@ -498,9 +540,56 @@ class TaskManager:
             )
             self._known_gids.add(gid)
             await self._broadcast_task_update(task_id)
-            return {"success": True, "message": "正在重试"}
+            return {"success": True, "message": "正在重新下载"}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    async def _retry_upload(self, task_id: str):
+        """仅重试上传步骤"""
+        try:
+            task = await db.get_task(task_id)
+            if not task:
+                return
+
+            local_path = task.get("local_path", "")
+            teldrive_path = task.get("teldrive_path", "/")
+
+            # 如果配置了 upload_dir，映射路径
+            upload_dir = self.config["teldrive"].get("upload_dir", "")
+            if upload_dir and local_path:
+                download_dir = get_download_dir(self.config)
+                norm_local = os.path.normpath(local_path)
+                norm_dl = os.path.normpath(download_dir)
+                if norm_local.startswith(norm_dl):
+                    rel = os.path.relpath(norm_local, norm_dl)
+                    local_path = os.path.join(upload_dir, rel)
+                else:
+                    local_path = os.path.join(upload_dir, os.path.basename(local_path))
+
+            if not local_path or not os.path.exists(local_path):
+                await db.update_task(task_id, status="failed",
+                                     error="本地文件不存在，无法重试上传")
+                await self._broadcast_task_update(task_id)
+                return
+
+            # 重置上传状态
+            await db.update_task(task_id, status="uploading",
+                                 upload_progress=0.0, error=None)
+            await self._broadcast_task_update(task_id)
+
+            await self._upload(task_id, local_path, teldrive_path)
+
+            # 清理本地文件
+            task = await db.get_task(task_id)
+            if task and task["status"] == "completed" and self.config["general"]["auto_delete"]:
+                if local_path and os.path.exists(local_path):
+                    os.remove(local_path)
+                    logger.info(f"已删除本地文件: {local_path}")
+
+        except Exception as e:
+            logger.error(f"任务 {task_id} 重试上传失败: {e}")
+            await db.update_task(task_id, status="failed", error=str(e))
+            await self._broadcast_task_update(task_id)
 
     async def delete_task(self, task_id: str) -> dict:
         """删除任务记录"""
