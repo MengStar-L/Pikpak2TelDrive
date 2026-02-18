@@ -196,13 +196,12 @@ class TaskManager:
                     logger.info(f"发现 aria2 任务: {gid} ({parsed['filename']}) 状态={initial_status}")
                     await self._broadcast_task_update(task_id)
 
-                    # 如果发现时已经完成，检查本地文件存在后触发上传
+                    # 如果发现时已经完成，触发上传
                     if aria2_status == "complete":
                         local_path = parsed["file_path"]
-                        if local_path and os.path.isabs(local_path) and os.path.exists(local_path):
+                        if local_path:
                             asyncio.create_task(self._handle_download_complete(task_id, gid))
                         else:
-                            # 文件不在本地（远程 aria2），直接标记已完成
                             await db.update_task(task_id, status="completed")
                             await self._broadcast_task_update(task_id)
                     continue
@@ -254,10 +253,10 @@ class TaskManager:
             await db.update_task(task_id, **update_data)
             await self._broadcast_task_update(task_id)
 
-            # 下载完成 → 触发上传（检查本地文件存在）
+            # 下载完成 → 触发上传
             if aria2_status == "complete" and current_status != "uploading":
                 local_path = parsed["file_path"]
-                if local_path and os.path.isabs(local_path) and os.path.exists(local_path):
+                if local_path:
                     asyncio.create_task(self._handle_download_complete(task_id, gid))
                 else:
                     await db.update_task(task_id, status="completed")
@@ -293,6 +292,14 @@ class TaskManager:
                     # local_path 不在 download_dir 下，直接用 upload_dir + 文件名
                     local_path = os.path.join(upload_dir, os.path.basename(local_path))
                     logger.info(f"路径映射(basename): {task['local_path']} -> {local_path}")
+
+            # 检查文件是否存在
+            if not os.path.exists(local_path):
+                error_msg = f"文件不存在: {local_path}"
+                logger.error(f"任务 {task_id} 上传失败: {error_msg}")
+                await db.update_task(task_id, status="failed", error=error_msg)
+                await self._broadcast_task_update(task_id)
+                return
 
             await db.update_task(task_id, status="uploading",
                                  download_progress=100.0, download_speed="")
