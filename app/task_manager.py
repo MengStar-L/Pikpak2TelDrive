@@ -566,13 +566,38 @@ class TaskManager:
                     await self._broadcast_task_update(task_id)
 
     def _calc_teldrive_path(self, local_path: str) -> str:
-        """计算文件在 TelDrive 上的目标目录。
-
-        直接返回用户配置的 target_path，不保留下载目录的子目录结构。
-        """
+        """计算文件在 TelDrive 上的目标目录，保留下载目录中的子目录结构。"""
         target_path = self.config["teldrive"].get("target_path", "/")
-        logger.info(f"[路径] {local_path} -> teldrive={target_path}")
-        return target_path
+
+        # 确定基础目录（upload_dir 或 download_dir）
+        upload_dir = self.config["teldrive"].get("upload_dir", "").strip()
+        if upload_dir:
+            base_dir = os.path.normpath(upload_dir)
+        else:
+            base_dir = os.path.normpath(
+                self.config["aria2"].get("download_dir", "./downloads"))
+
+        norm_path = os.path.normpath(local_path)
+
+        # 文件 → 取父目录；目录（BT文件夹）→ 取自身
+        if os.path.isfile(norm_path):
+            parent = os.path.dirname(norm_path)
+        else:
+            parent = norm_path
+
+        norm_parent = os.path.normpath(parent)
+
+        if norm_parent == base_dir:
+            # 文件直接在下载目录下，无子目录
+            result = target_path
+        elif norm_parent.startswith(base_dir + os.sep):
+            rel = os.path.relpath(norm_parent, base_dir).replace("\\", "/")
+            result = target_path.rstrip("/") + "/" + rel
+        else:
+            result = target_path
+
+        logger.info(f"[路径] {local_path} -> teldrive={result}")
+        return result
 
     async def _handle_download_complete(self, task_id: str, gid: str):
         """下载完成后自动上传到 TelDrive"""
