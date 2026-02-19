@@ -605,6 +605,7 @@ async function loadAndFillSettings() {
         document.getElementById('td-channel-id').value = settings.teldrive?.channel_id || 0;
         document.getElementById('td-chunk-size').value = settings.teldrive?.chunk_size || '500M';
         document.getElementById('td-upload-concurrency').value = settings.teldrive?.upload_concurrency || 4;
+        document.getElementById('td-upload-dir').value = settings.teldrive?.upload_dir || '';
         document.getElementById('td-target-path').value = settings.teldrive?.target_path || '/';
         // General
         document.getElementById('gen-max-retries').value = settings.general?.max_retries || 3;
@@ -631,6 +632,7 @@ function collectSettings() {
             channel_id: parseInt(document.getElementById('td-channel-id').value) || 0,
             chunk_size: document.getElementById('td-chunk-size').value,
             upload_concurrency: parseInt(document.getElementById('td-upload-concurrency').value) || 4,
+            upload_dir: document.getElementById('td-upload-dir').value || '',
             target_path: document.getElementById('td-target-path').value || '/'
         },
         general: {
