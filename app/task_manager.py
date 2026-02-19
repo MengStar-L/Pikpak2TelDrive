@@ -336,6 +336,32 @@ class TaskManager:
             return mapped
         return original_path  # 返回原始路径（后续会报错文件不存在）
 
+    def _calc_teldrive_subdir(self, original_path: str,
+                              base_teldrive_path: str) -> str:
+        """根据文件相对于 download_dir 的子目录结构，计算 TelDrive 的目标路径。
+
+        例如:
+            download_dir = /downloads/te
+            original_path = /downloads/te/电视剧/Season1/ep01.mp4
+            base_teldrive_path = /
+            → 返回 /电视剧/Season1
+        """
+        download_dir = get_download_dir(self.config)
+        norm_dl = os.path.normpath(download_dir)
+        norm_fp = os.path.normpath(original_path)
+
+        if norm_fp.startswith(norm_dl + os.sep):
+            rel = os.path.relpath(norm_fp, norm_dl)
+            # rel 类似 "电视剧/Season1/ep01.mp4"
+            rel_dir = os.path.dirname(rel).replace("\\", "/")
+            if rel_dir and rel_dir != ".":
+                result = base_teldrive_path.rstrip("/") + "/" + rel_dir
+                logger.info(f"[路径] 保留文件夹结构: {rel_dir} -> "
+                            f"teldrive={result}")
+                return result
+
+        return base_teldrive_path
+
     async def _handle_download_complete(self, task_id: str, gid: str):
         """下载完成后自动上传到 TelDrive"""
         if gid in self._uploading_gids:
@@ -373,8 +399,12 @@ class TaskManager:
                 logger.info(f"[上传] 走文件夹上传: {local_path}")
                 await self._upload_directory(task_id, local_path, teldrive_path)
             else:
-                logger.info(f"[上传] 走单文件上传: {local_path}")
-                await self._upload(task_id, local_path, teldrive_path)
+                # 保留文件夹结构：从文件路径中提取子目录，追加到 teldrive_path
+                upload_teldrive_path = self._calc_teldrive_subdir(
+                    original_path, teldrive_path)
+                logger.info(f"[上传] 走单文件上传: {local_path} -> "
+                            f"teldrive={upload_teldrive_path}")
+                await self._upload(task_id, local_path, upload_teldrive_path)
 
             # 清理本地文件/文件夹
             task = await db.get_task(task_id)
@@ -696,7 +726,9 @@ class TaskManager:
             if os.path.isdir(local_path):
                 await self._upload_directory(task_id, local_path, teldrive_path)
             else:
-                await self._upload(task_id, local_path, teldrive_path)
+                upload_teldrive_path = self._calc_teldrive_subdir(
+                    original_path, teldrive_path)
+                await self._upload(task_id, local_path, upload_teldrive_path)
 
             # 清理本地文件/文件夹
             task = await db.get_task(task_id)
