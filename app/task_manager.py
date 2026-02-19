@@ -569,35 +569,40 @@ class TaskManager:
     def _calc_teldrive_path(self, local_path: str) -> str:
         """计算文件在 TelDrive 上的目标目录。
 
-        公式: target_path + (文件所在目录 - download_dir)
+        公式: target_path + (local_path 的父目录 - base_dir)
+        base_dir = upload_dir（如果设置）或 download_dir
+
+        统一取 local_path 的 parent：
+          - 单文件 → parent 就是文件所在目录
+          - 文件夹 → parent 就是其父目录（_upload_directory 会追加文件夹名）
 
         例如:
-            target_path   = /movies
-            download_dir  = /downloads
-            local_path    = /downloads/电视剧/Season1/ep01.mp4
+            target_path  = /movies
+            base_dir     = /downloads
+            local_path   = /downloads/电视剧/Season1/ep01.mp4
+            → parent     = /downloads/电视剧/Season1
+            → rel        = 电视剧/Season1
             → 返回 /movies/电视剧/Season1
         """
         target_path = self.config["teldrive"].get("target_path", "/")
         upload_dir = self.config["teldrive"].get("upload_dir", "").strip()
         base_dir = upload_dir if upload_dir else get_download_dir(self.config)
-        norm_dl = os.path.normpath(base_dir)
-        norm_fp = os.path.normpath(local_path)
 
-        # 取文件所在目录（如果是目录则取其父目录，因为目录名会在上传时拼上去）
-        if os.path.isdir(norm_fp):
-            file_dir = norm_fp
-        else:
-            file_dir = os.path.dirname(norm_fp)
+        try:
+            # 使用 Path.resolve() 统一路径格式，避免 Windows 上大小写/分隔符差异
+            local = Path(local_path).resolve()
+            base = Path(base_dir).resolve()
 
-        # 计算相对路径: 文件所在目录 - download_dir
-        if file_dir.startswith(norm_dl + os.sep) or file_dir == norm_dl:
-            rel_dir = os.path.relpath(file_dir, norm_dl).replace("\\", "/")
-            if rel_dir == ".":
+            # 取 parent 的相对路径
+            rel = local.parent.relative_to(base)
+            rel_posix = rel.as_posix()
+
+            if rel_posix == ".":
                 result = target_path
             else:
-                result = target_path.rstrip("/") + "/" + rel_dir
-        else:
-            # 不在 download_dir 下时直接用 target_path
+                result = target_path.rstrip("/") + "/" + rel_posix
+        except (ValueError, RuntimeError):
+            # local_path 不在 base_dir 下，直接用 target_path
             result = target_path
 
         logger.info(f"[路径] {local_path} -> teldrive={result}")
