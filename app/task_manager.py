@@ -603,10 +603,17 @@ class TaskManager:
                         f"teldrive={teldrive_path}")
 
             if not os.path.exists(local_path):
-                error_msg = f"上传中断:本地文件不存在"
-                logger.error(f"任务 {task_id} 上传失败: {error_msg}")
-                await db.update_task(task_id, status="failed", error=error_msg)
-                await self._broadcast_task_update(task_id)
+                # auto_delete 开启 + 下载已完成 + 文件不存在 = 上次运行已上传并清理
+                if self.config["general"].get("auto_delete", True):
+                    logger.info(f"任务 {task_id} 文件已被清理（可能已上传），标记为已完成: {local_path}")
+                    await db.update_task(task_id, status="completed",
+                                         download_progress=100.0)
+                    await self._broadcast_task_update(task_id)
+                else:
+                    error_msg = f"上传中断:本地文件不存在 {local_path}"
+                    logger.error(f"任务 {task_id} 上传失败: {error_msg}")
+                    await db.update_task(task_id, status="failed", error=error_msg)
+                    await self._broadcast_task_update(task_id)
                 return
 
             await db.update_task(task_id, status="uploading",
