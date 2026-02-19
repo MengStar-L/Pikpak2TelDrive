@@ -569,44 +569,11 @@ class TaskManager:
     def _calc_teldrive_path(self, local_path: str) -> str:
         """计算文件在 TelDrive 上的目标目录。
 
-        公式: target_path + (local_path 的父目录 - base_dir)
-        base_dir = upload_dir（如果设置）或 download_dir
-
-        统一取 local_path 的 parent：
-          - 单文件 → parent 就是文件所在目录
-          - 文件夹 → parent 就是其父目录（_upload_directory 会追加文件夹名）
-
-        例如:
-            target_path  = /movies
-            base_dir     = /downloads
-            local_path   = /downloads/电视剧/Season1/ep01.mp4
-            → parent     = /downloads/电视剧/Season1
-            → rel        = 电视剧/Season1
-            → 返回 /movies/电视剧/Season1
+        直接返回用户配置的 target_path，不保留下载目录的子目录结构。
         """
         target_path = self.config["teldrive"].get("target_path", "/")
-        upload_dir = self.config["teldrive"].get("upload_dir", "").strip()
-        base_dir = upload_dir if upload_dir else get_download_dir(self.config)
-
-        try:
-            # 使用 Path.resolve() 统一路径格式，避免 Windows 上大小写/分隔符差异
-            local = Path(local_path).resolve()
-            base = Path(base_dir).resolve()
-
-            # 取 parent 的相对路径
-            rel = local.parent.relative_to(base)
-            rel_posix = rel.as_posix()
-
-            if rel_posix == ".":
-                result = target_path
-            else:
-                result = target_path.rstrip("/") + "/" + rel_posix
-        except (ValueError, RuntimeError):
-            # local_path 不在 base_dir 下，直接用 target_path
-            result = target_path
-
-        logger.info(f"[路径] {local_path} -> teldrive={result}")
-        return result
+        logger.info(f"[路径] {local_path} -> teldrive={target_path}")
+        return target_path
 
     async def _handle_download_complete(self, task_id: str, gid: str):
         """下载完成后自动上传到 TelDrive"""
