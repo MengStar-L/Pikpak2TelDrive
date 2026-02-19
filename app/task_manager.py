@@ -74,39 +74,30 @@ class TaskManager:
     def _get_upload_path(self, local_path: str) -> str:
         """将 aria2 下载路径映射到用户配置的上传文件目录。
 
-        当用户设置了 upload_dir 时，将 aria2 报告的路径映射到 upload_dir 下。
-        支持两种映射策略：
-        1. 前缀替换：用 upload_dir 替换 download_dir 前缀
-        2. 回退查找：逐级剥离路径前缀，在 upload_dir 下查找文件
-           （适用于 Docker 路径映射不一致的场景）
+        当用户设置了 upload_dir 时，用 upload_dir 替换 download_dir 前缀。
+        local_path 已在 _sync_aria2_tasks 中用 item['dir'] + filename 构造，
+        所以这里只需做简单的前缀替换。
         """
         upload_dir = self.config["teldrive"].get("upload_dir", "").strip()
         if not upload_dir:
             return local_path
 
-        # 策略1: 前缀替换 download_dir → upload_dir
-        download_dir = get_download_dir(self.config)
+        download_dir = self.config["aria2"].get("download_dir", "./downloads")
         norm_dl = os.path.normpath(download_dir)
         norm_fp = os.path.normpath(local_path)
 
+        # 前缀替换 download_dir → upload_dir
         if norm_fp.startswith(norm_dl + os.sep) or norm_fp == norm_dl:
             rel = os.path.relpath(norm_fp, norm_dl)
             mapped = os.path.join(upload_dir, rel)
             logger.info(f"[路径映射] {local_path} -> {mapped}")
             return mapped
 
-        # 策略2: 回退查找 - 逐级剥离路径前缀，在 upload_dir 下查找
-        parts = Path(norm_fp).parts
-        for i in range(1, len(parts)):
-            candidate = os.path.join(upload_dir, *parts[i:])
-            if os.path.exists(candidate):
-                logger.info(f"[路径映射-回退] {local_path} -> {candidate}")
-                return candidate
-
-        # 都失败，返回原始路径
-        logger.warning(f"[路径映射] 无法映射路径: {local_path}, "
-                       f"download_dir={download_dir}, upload_dir={upload_dir}")
-        return local_path
+        # download_dir 不匹配时，直接用 upload_dir + 文件名
+        filename = os.path.basename(norm_fp)
+        mapped = os.path.join(upload_dir, filename)
+        logger.info(f"[路径映射-文件名] {local_path} -> {mapped}")
+        return mapped
 
     async def _apply_aria2_options(self):
         """将本地配置同步到远端 aria2"""
@@ -446,19 +437,18 @@ class TaskManager:
 
             parsed = Aria2Client.parse_status(item)
             aria2_status = parsed["status"]
-
-            # BT 下载：用 aria2 的 dir + bittorrent.info.name 作为路径
-            # 单文件BT: bt_path 是文件路径 → isdir=False → 单文件上传
-            # 多文件BT: bt_path 是文件夹路径 → isdir=True → 文件夹上传
-            bt_name = item.get("bittorrent", {}).get("info", {}).get("name", "")
             task_dir = item.get("dir", "")
+
+            # 用 aria2 任务级的 dir + 文件名重新构造本地路径
+            # 不信任 files[0].path 中的目录部分（aria2 可能返回错误的目录）
+            bt_name = item.get("bittorrent", {}).get("info", {}).get("name", "")
             if bt_name and task_dir:
-                bt_path = os.path.join(task_dir, bt_name)
-                logger.info(f"[BT检测] gid={gid}, bt_name={bt_name}, "
-                            f"task_dir={task_dir}, bt_path={bt_path}, "
-                            f"files={len(item.get('files', []))}")
-                parsed["file_path"] = bt_path
+                # BT 下载：dir + bt_name
+                parsed["file_path"] = os.path.join(task_dir, bt_name)
                 parsed["filename"] = bt_name
+            elif task_dir and parsed["filename"]:
+                # 非 BT 下载：dir + filename
+                parsed["file_path"] = os.path.join(task_dir, parsed["filename"])
 
             # 判断是否已入库
             if gid not in self._known_gids:
