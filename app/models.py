@@ -52,6 +52,8 @@ class GeneralSettings(BaseModel):
     """通用设置"""
     max_retries: int = 3
     auto_delete: bool = True
+    max_disk_usage: int = 0
+    cpu_limit: int = 85
 
 
 class AllSettings(BaseModel):
