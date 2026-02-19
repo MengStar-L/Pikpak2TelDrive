@@ -71,6 +71,34 @@ class TaskManager:
         # 异步同步 aria2 全局选项
         asyncio.create_task(self._apply_aria2_options())
 
+    def _get_upload_path(self, local_path: str) -> str:
+        """将 aria2 下载路径映射到用户配置的上传文件目录。
+
+        当用户设置了 upload_dir 时，local_path（aria2 记录的路径）中的
+        download_dir 前缀会被替换为 upload_dir。
+        例如:
+            download_dir = /downloads
+            upload_dir   = /nas/media
+            local_path   = /downloads/movie.mp4
+            → 返回 /nas/media/movie.mp4
+        """
+        upload_dir = self.config["teldrive"].get("upload_dir", "").strip()
+        if not upload_dir:
+            return local_path
+
+        download_dir = get_download_dir(self.config)
+        norm_dl = os.path.normpath(download_dir)
+        norm_fp = os.path.normpath(local_path)
+
+        if norm_fp.startswith(norm_dl + os.sep) or norm_fp == norm_dl:
+            rel = os.path.relpath(norm_fp, norm_dl)
+            mapped = os.path.join(upload_dir, rel)
+            logger.info(f"[路径映射] {local_path} -> {mapped} (upload_dir={upload_dir})")
+            return mapped
+
+        # 不在 download_dir 下，返回原始路径
+        return local_path
+
     async def _apply_aria2_options(self):
         """将本地配置同步到远端 aria2"""
         try:
@@ -550,8 +578,9 @@ class TaskManager:
             → 返回 /movies/电视剧/Season1
         """
         target_path = self.config["teldrive"].get("target_path", "/")
-        download_dir = get_download_dir(self.config)
-        norm_dl = os.path.normpath(download_dir)
+        upload_dir = self.config["teldrive"].get("upload_dir", "").strip()
+        base_dir = upload_dir if upload_dir else get_download_dir(self.config)
+        norm_dl = os.path.normpath(base_dir)
         norm_fp = os.path.normpath(local_path)
 
         # 取文件所在目录（如果是目录则取其父目录，因为目录名会在上传时拼上去）
@@ -586,7 +615,7 @@ class TaskManager:
                 logger.warning(f"任务 {task_id} 无本地文件路径，跳过上传")
                 return
 
-            local_path = task["local_path"]
+            local_path = self._get_upload_path(task["local_path"])
             teldrive_path = self._calc_teldrive_path(local_path)
 
             # 等待文件就绪（aria2 可能还在写入/移动文件）
@@ -927,7 +956,7 @@ class TaskManager:
             self._uploading_gids.discard(gid)
 
         # 如果本地文件/文件夹已存在，直接重试上传
-        local_path = task.get("local_path", "")
+        local_path = self._get_upload_path(task.get("local_path", ""))
         if local_path and os.path.exists(local_path):
             t = asyncio.create_task(self._retry_upload(task_id))
             self._upload_tasks[task_id] = t
@@ -968,7 +997,7 @@ class TaskManager:
             if not task:
                 return
 
-            local_path = task.get("local_path", "")
+            local_path = self._get_upload_path(task.get("local_path", ""))
 
             if not local_path or not os.path.exists(local_path):
                 await db.update_task(task_id, status="failed",
