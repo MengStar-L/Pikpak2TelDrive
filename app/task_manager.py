@@ -181,6 +181,14 @@ class TaskManager:
             parsed = Aria2Client.parse_status(item)
             aria2_status = parsed["status"]
 
+            # BT 多文件下载：用 aria2 的 dir + bittorrent.info.name 拼出文件夹路径
+            bt_name = item.get("bittorrent", {}).get("info", {}).get("name", "")
+            task_dir = item.get("dir", "")
+            if bt_name and task_dir and len(item.get("files", [])) > 1:
+                bt_folder = os.path.join(task_dir, bt_name)
+                parsed["file_path"] = bt_folder
+                parsed["filename"] = bt_name
+
             # 判断是否已入库
             if gid not in self._known_gids:
                 # 新发现的 aria2 任务，检查是否已在数据库
