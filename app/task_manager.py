@@ -184,10 +184,15 @@ class TaskManager:
             # BT 多文件下载：用 aria2 的 dir + bittorrent.info.name 拼出文件夹路径
             bt_name = item.get("bittorrent", {}).get("info", {}).get("name", "")
             task_dir = item.get("dir", "")
-            if bt_name and task_dir and len(item.get("files", [])) > 1:
-                bt_folder = os.path.join(task_dir, bt_name)
-                parsed["file_path"] = bt_folder
-                parsed["filename"] = bt_name
+            files_count = len(item.get("files", []))
+            if bt_name and task_dir:
+                logger.debug(f"[BT检测] gid={gid}, bt_name={bt_name}, "
+                             f"task_dir={task_dir}, files_count={files_count}")
+                if files_count > 1:
+                    bt_folder = os.path.join(task_dir, bt_name)
+                    parsed["file_path"] = bt_folder
+                    parsed["filename"] = bt_name
+                    logger.info(f"[BT检测] 多文件BT，使用文件夹路径: {bt_folder}")
 
             # 判断是否已入库
             if gid not in self._known_gids:
@@ -364,13 +369,26 @@ class TaskManager:
             original_path = task["local_path"]
             teldrive_path = task.get("teldrive_path", "/")
 
+            logger.info(f"[上传调试] 任务 {task_id}: "
+                        f"DB local_path={original_path}, "
+                        f"teldrive_path={teldrive_path}")
+
             # 检测是否在 BT 子文件夹内（在 upload_dir 映射之前，用原始路径判断）
             detected_path = self._detect_folder_path(original_path)
+            logger.info(f"[上传调试] _detect_folder_path: {original_path} -> {detected_path}")
+
             # 再做 upload_dir 映射
             local_path = self._map_upload_path(detected_path)
+            logger.info(f"[上传调试] _map_upload_path: {detected_path} -> {local_path}")
+
+            is_dir = os.path.isdir(local_path)
+            is_file = os.path.isfile(local_path)
+            exists = os.path.exists(local_path)
+            logger.info(f"[上传调试] local_path={local_path}, "
+                        f"exists={exists}, isdir={is_dir}, isfile={is_file}")
 
             # 检查文件/文件夹是否存在
-            if not os.path.exists(local_path):
+            if not exists:
                 error_msg = f"文件不存在: {local_path}"
                 logger.error(f"任务 {task_id} 上传失败: {error_msg}")
                 await db.update_task(task_id, status="failed", error=error_msg)
@@ -382,9 +400,11 @@ class TaskManager:
             await self._broadcast_task_update(task_id)
 
             # 判断是文件夹还是单文件
-            if os.path.isdir(local_path):
+            if is_dir:
+                logger.info(f"[上传调试] 走文件夹上传路径: {local_path}")
                 await self._upload_directory(task_id, local_path, teldrive_path)
             else:
+                logger.info(f"[上传调试] 走单文件上传路径: {local_path}")
                 await self._upload(task_id, local_path, teldrive_path)
 
             # 清理本地文件/文件夹
