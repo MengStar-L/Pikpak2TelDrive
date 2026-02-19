@@ -88,6 +88,8 @@ class TelDriveClient:
 
     async def create_directory(self, path: str) -> dict:
         """创建目录 - POST /api/files/mkdir"""
+        import traceback
+        logger.info(f"[创建目录] path={path}, 调用栈:\n{''.join(traceback.format_stack()[-4:-1])}")
         async with aiohttp.ClientSession(timeout=self.DEFAULT_TIMEOUT) as session:
             async with session.post(
                 f"{self.api_host}/api/files/mkdir",
@@ -296,6 +298,7 @@ class TelDriveClient:
                                    uploaded_parts: List[Dict],
                                    total_size: int) -> dict:
         """上传完成后校验 parts 并创建文件记录"""
+        logger.info(f"[创建文件记录] name={name}, path={path}")
         # 校验：比对远程 parts 数量与本地上传的数量
         remote_parts = await self._get_file_parts(session, upload_id)
         if len(remote_parts) != len(uploaded_parts):
