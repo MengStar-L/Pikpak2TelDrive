@@ -708,8 +708,8 @@ class TaskManager:
         import time
 
         # 收集所有文件及其大小
-        dir_name = os.path.basename(dir_path)
-        base_teldrive_path = teldrive_path.rstrip("/") + "/" + dir_name
+        # 直接使用 teldrive_path 作为基础路径，不额外嵌套文件夹名
+        base_teldrive_path = teldrive_path.rstrip("/") if teldrive_path != "/" else "/"
         all_files = []
         for root, _dirs, filenames in os.walk(dir_path):
             for fname in filenames:
