@@ -603,17 +603,21 @@ class TaskManager:
                         f"teldrive={teldrive_path}")
 
             if not os.path.exists(local_path):
-                # auto_delete 开启 + 下载已完成 + 文件不存在 = 上次运行已上传并清理
-                if self.config["general"].get("auto_delete", True):
-                    logger.info(f"任务 {task_id} 文件已被清理（可能已上传），标记为已完成: {local_path}")
-                    await db.update_task(task_id, status="completed",
-                                         download_progress=100.0)
-                    await self._broadcast_task_update(task_id)
-                else:
-                    error_msg = f"上传中断:本地文件不存在 {local_path}"
-                    logger.error(f"任务 {task_id} 上传失败: {error_msg}")
-                    await db.update_task(task_id, status="failed", error=error_msg)
-                    await self._broadcast_task_update(task_id)
+                # 输出调试信息：列出下载目录内容，帮助排查路径问题
+                download_dir = get_download_dir(self.config)
+                try:
+                    dir_contents = os.listdir(download_dir) if os.path.isdir(download_dir) else []
+                    logger.error(
+                        f"任务 {task_id} 文件不存在!\n"
+                        f"  期望路径: {local_path}\n"
+                        f"  下载目录: {download_dir}\n"
+                        f"  目录存在: {os.path.isdir(download_dir)}\n"
+                        f"  目录内容: {dir_contents[:20]}")
+                except Exception:
+                    pass
+                error_msg = f"本地文件不存在: {local_path}"
+                await db.update_task(task_id, status="failed", error=error_msg)
+                await self._broadcast_task_update(task_id)
                 return
 
             await db.update_task(task_id, status="uploading",
