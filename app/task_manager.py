@@ -5,6 +5,7 @@ import uuid
 import os
 import shutil
 import logging
+import psutil
 from typing import Optional, Set
 from pathlib import Path
 
@@ -40,6 +41,10 @@ class TaskManager:
         # 磁盘空间限制：空间不足时暂停 aria2 下载
         self._disk_paused: bool = False
         self._disk_usage_info: dict = {}  # 缓存磁盘使用信息
+        # CPU 自适应限流
+        self._cpu_throttled: int = 0  # 0=正常, 1=轻度, 2=重度
+        self._cpu_info: dict = {}
+        self._original_upload_concurrency: int = 0  # 保存原始上传并发数
 
     def _init_clients(self):
         """根据当前配置初始化客户端"""
@@ -162,6 +167,8 @@ class TaskManager:
 
                 # 检测磁盘空间
                 await self._check_disk_usage()
+                # 检测 CPU 使用率
+                await self._check_cpu_usage()
 
                 await self._sync_aria2_tasks()
                 await asyncio.sleep(2)
@@ -215,16 +222,98 @@ class TaskManager:
             logger.debug(f"检测磁盘使用失败: {e}")
 
     async def _resume_aria2_downloads(self):
-        """恢复 aria2 下载并发数"""
-        max_concurrent = str(self.config["aria2"].get("max_concurrent", 3))
+        """恢复 aria2 下载并发数（仅在未被 CPU 限流重度时恢复到正常值）"""
+        # 如果 CPU 也在限流，恢复到 CPU 限流级别对应的值而不是全量
+        if self._cpu_throttled >= 2:
+            target = "1"
+        elif self._cpu_throttled == 1:
+            max_c = self.config["aria2"].get("max_concurrent", 3)
+            target = str(max(1, max_c // 2))
+        else:
+            target = str(self.config["aria2"].get("max_concurrent", 3))
         try:
             await self.aria2.change_global_option(
-                {"max-concurrent-downloads": max_concurrent})
+                {"max-concurrent-downloads": target})
             self._disk_paused = False
             self._disk_usage_info["paused"] = False
-            logger.info(f"磁盘空间已恢复，恢复 aria2 并发数为 {max_concurrent}")
+            logger.info(f"磁盘空间已恢复，恢复 aria2 并发数为 {target}")
         except Exception as e:
             logger.error(f"恢复 aria2 下载失败: {e}")
+
+    async def _check_cpu_usage(self):
+        """检测 CPU 使用率，三级调控并发"""
+        cpu_limit = self.config["general"].get("cpu_limit", 85)
+        if cpu_limit <= 0:
+            if self._cpu_throttled > 0:
+                await self._restore_cpu_throttle()
+            self._cpu_info = {}
+            return
+
+        try:
+            cpu_pct = psutil.cpu_percent(interval=None)
+            self._cpu_info = {
+                "percent": cpu_pct,
+                "limit": cpu_limit,
+                "throttled": self._cpu_throttled
+            }
+
+            # 保存原始上传并发数（仅首次）
+            if self._original_upload_concurrency == 0 and self.teldrive:
+                self._original_upload_concurrency = self.teldrive.upload_concurrency
+
+            level_threshold_low = cpu_limit * 0.82   # ~70% when limit=85
+            level_threshold_mid = cpu_limit * 0.94   # ~80% when limit=85
+
+            if cpu_pct >= cpu_limit and self._cpu_throttled < 2:
+                # 重度限流：并发=1
+                logger.warning(f"CPU {cpu_pct}% >= {cpu_limit}%，重度限流")
+                if not self._disk_paused:  # 磁盘暂停优先
+                    try:
+                        await self.aria2.change_global_option(
+                            {"max-concurrent-downloads": "1"})
+                    except Exception:
+                        pass
+                if self.teldrive:
+                    self.teldrive.upload_concurrency = 1
+                self._cpu_throttled = 2
+                self._cpu_info["throttled"] = 2
+
+            elif cpu_pct >= level_threshold_mid and self._cpu_throttled < 1:
+                # 轻度限流：并发减半
+                logger.info(f"CPU {cpu_pct}% >= {level_threshold_mid:.0f}%，轻度限流")
+                max_c = self.config["aria2"].get("max_concurrent", 3)
+                if not self._disk_paused:
+                    try:
+                        await self.aria2.change_global_option(
+                            {"max-concurrent-downloads": str(max(1, max_c // 2))})
+                    except Exception:
+                        pass
+                if self.teldrive and self._original_upload_concurrency > 1:
+                    self.teldrive.upload_concurrency = max(1, self._original_upload_concurrency // 2)
+                self._cpu_throttled = 1
+                self._cpu_info["throttled"] = 1
+
+            elif cpu_pct < level_threshold_low and self._cpu_throttled > 0:
+                # 恢复
+                await self._restore_cpu_throttle()
+
+        except Exception as e:
+            logger.debug(f"检测 CPU 使用失败: {e}")
+
+    async def _restore_cpu_throttle(self):
+        """恢复 CPU 限流前的并发数"""
+        max_concurrent = str(self.config["aria2"].get("max_concurrent", 3))
+        if not self._disk_paused:  # 磁盘暂停时不恢复 aria2
+            try:
+                await self.aria2.change_global_option(
+                    {"max-concurrent-downloads": max_concurrent})
+            except Exception:
+                pass
+        if self.teldrive and self._original_upload_concurrency > 0:
+            self.teldrive.upload_concurrency = self._original_upload_concurrency
+        self._cpu_throttled = 0
+        self._cpu_info["throttled"] = 0
+        logger.info(f"CPU 负载恢复正常，恢复并发数")
 
     async def _sync_aria2_tasks(self):
         """从 aria2 获取所有任务，同步到本地数据库"""
@@ -253,6 +342,9 @@ class TaskManager:
             # 附加磁盘使用信息
             if self._disk_usage_info:
                 broadcast_data["disk"] = self._disk_usage_info
+            # 附加 CPU 使用信息
+            if self._cpu_info:
+                broadcast_data["cpu"] = self._cpu_info
             await self.broadcast({
                 "type": "global_stat",
                 "data": broadcast_data

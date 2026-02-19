@@ -10,6 +10,7 @@ aria2 下载 + TelDrive 上传中转服务 —— 通过 Web 面板管理下载�
 - 📊 **WebSocket 推送**：实时同步下载/上传进度到前端
 - 🗑️ **自动清理**：上传完成后可自动删除本地文件
 - 💾 **磁盘空间限制**：设置磁盘使用上限，空间不足自动暂停下载，释放空间后自动恢复
+- 🧠 **CPU 自适应限流**：根据系统 CPU 使用率自动调节下载/上传并发数，避免服务器过载
 - 🧩 **Random Chunking 支持**：兼容 TelDrive Random Chunking 模式
 - 🔄 **断点续传**：分片上传失败自动重试
 
@@ -68,6 +69,7 @@ target_path = "/"                   # TelDrive 目标路径
 max_retries = 3                     # 失败重试次数
 auto_delete = true                  # 上传后自动删除本地文件
 max_disk_usage = 0                  # 磁盘使用上限(GB)，0=不限制
+cpu_limit = 85                      # CPU 使用率上限(%)，0=不限制
 ```
 
 ### 4. 确保 aria2 已运行

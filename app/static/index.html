@@ -175,6 +175,27 @@
                             <span class="stat-label" id="stat-disk-label">磁盘使用</span>
                         </div>
                     </div>
+                    <div class="stat-card" id="stat-cpu-card" style="display:none">
+                        <div class="stat-icon" style="background: rgba(129, 140, 248, 0.15); color: #818cf8;">
+                            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="4" y="4" width="16" height="16" rx="2" />
+                                <rect x="9" y="9" width="6" height="6" />
+                                <line x1="9" y1="1" x2="9" y2="4" />
+                                <line x1="15" y1="1" x2="15" y2="4" />
+                                <line x1="9" y1="20" x2="9" y2="23" />
+                                <line x1="15" y1="20" x2="15" y2="23" />
+                                <line x1="20" y1="9" x2="23" y2="9" />
+                                <line x1="20" y1="14" x2="23" y2="14" />
+                                <line x1="1" y1="9" x2="4" y2="9" />
+                                <line x1="1" y1="14" x2="4" y2="14" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-cpu-usage">--</span>
+                            <span class="stat-label" id="stat-cpu-label">CPU</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 最近任务 -->
@@ -385,6 +406,12 @@
                                 <label for="gen-max-disk-usage">磁盘使用上限 (GB)</label>
                                 <input type="number" id="gen-max-disk-usage" placeholder="0 表示不限制" min="0" step="1">
                                 <small style="color:rgba(255,255,255,0.4);font-size:11px">空间不足时暂停下载，上传释放空间后自动恢复。0 =
+                                    不限制</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="gen-cpu-limit">CPU 使用率上限 (%)</label>
+                                <input type="number" id="gen-cpu-limit" placeholder="85" min="0" max="100" step="5">
+                                <small style="color:rgba(255,255,255,0.4);font-size:11px">超过时自动降低下载/上传并发数。0 =
                                     不限制</small>
                             </div>
                         </div>

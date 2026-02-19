@@ -268,6 +268,27 @@ function handleWSMessage(msg) {
                 } else {
                     document.getElementById('stat-disk-card').style.display = 'none';
                 }
+                // CPU 使用状态
+                if (msg.data.cpu) {
+                    const cpu = msg.data.cpu;
+                    const cpuCard = document.getElementById('stat-cpu-card');
+                    const cpuUsage = document.getElementById('stat-cpu-usage');
+                    const cpuLabel = document.getElementById('stat-cpu-label');
+                    cpuCard.style.display = '';
+                    cpuUsage.textContent = `${cpu.percent.toFixed(1)}%`;
+                    if (cpu.throttled >= 2) {
+                        cpuLabel.textContent = 'CPU 过高 · 重度限流';
+                        cpuLabel.style.color = 'var(--error)';
+                    } else if (cpu.throttled === 1) {
+                        cpuLabel.textContent = 'CPU 偏高 · 轻度限流';
+                        cpuLabel.style.color = '#fb923c';
+                    } else {
+                        cpuLabel.textContent = `CPU (上限 ${cpu.limit}%)`;
+                        cpuLabel.style.color = '';
+                    }
+                } else {
+                    document.getElementById('stat-cpu-card').style.display = 'none';
+                }
             }
             break;
 
@@ -579,6 +600,7 @@ async function loadAndFillSettings() {
         document.getElementById('gen-max-retries').value = settings.general?.max_retries || 3;
         document.getElementById('gen-auto-delete').checked = settings.general?.auto_delete !== false;
         document.getElementById('gen-max-disk-usage').value = settings.general?.max_disk_usage || 0;
+        document.getElementById('gen-cpu-limit').value = settings.general?.cpu_limit ?? 85;
     } catch (e) {
         showToast('加载设置失败: ' + e.message, 'error');
     }
@@ -605,7 +627,8 @@ function collectSettings() {
         general: {
             max_retries: parseInt(document.getElementById('gen-max-retries').value) || 3,
             auto_delete: document.getElementById('gen-auto-delete').checked,
-            max_disk_usage: parseInt(document.getElementById('gen-max-disk-usage').value) || 0
+            max_disk_usage: parseInt(document.getElementById('gen-max-disk-usage').value) || 0,
+            cpu_limit: parseInt(document.getElementById('gen-cpu-limit').value) || 0
         }
     };
 }
