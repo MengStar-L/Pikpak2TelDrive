@@ -137,7 +137,7 @@ class TaskManager:
         for t in all_tasks:
             if t["status"] == "uploading":
                 task_id = t["task_id"]
-                local_path = t.get("local_path", "")
+                local_path = self._get_upload_path(t.get("local_path", ""))
                 if local_path and os.path.exists(local_path):
                     logger.info(f"恢复僵死的上传任务: {task_id} ({t.get('filename', '?')})")
                     upload_t = asyncio.create_task(self._retry_upload(task_id))
@@ -897,8 +897,8 @@ class TaskManager:
                     await self.aria2.force_remove(task["aria2_gid"])
                 except Exception:
                     pass
-            # 删除本地文件/文件夹
-            local = task.get("local_path", "")
+            # 删除本地文件/文件夹（映射到实际路径）
+            local = self._get_upload_path(task.get("local_path", ""))
             if local and os.path.exists(local):
                 if os.path.isdir(local):
                     shutil.rmtree(local, ignore_errors=True)
