@@ -29,8 +29,14 @@ class TaskManager:
         self._running = False
         # 内存缓存：已知的 GID 集合，避免重复查库
         self._known_gids: set = set()
+        # 终态 GID 集合：已完成/失败/取消的任务，不再查库更新
+        self._terminal_gids: set = set()
         # 正在上传的 GID 集合，避免重复触发上传
         self._uploading_gids: set = set()
+        # 上传并发控制：限制同时上传的任务数，防止资源耗尽
+        self._upload_semaphore = asyncio.Semaphore(
+            self.config["teldrive"].get("upload_concurrency", 4)
+        )
         # 上传协程追踪：task_id -> asyncio.Task，重试时可取消旧任务
         self._upload_tasks: dict = {}
         # 上传速度跟踪：per-task 已上传字节 → monitor loop 汇总算总速度
@@ -469,6 +475,10 @@ class TaskManager:
             if not gid:
                 continue
 
+            # 终态任务不再处理，直接跳过
+            if gid in self._terminal_gids:
+                continue
+
             parsed = Aria2Client.parse_status(item)
             aria2_status = parsed["status"]
             task_dir = item.get("dir", "")
@@ -552,6 +562,7 @@ class TaskManager:
 
             # 已完成上传、已取消、已失败的任务不再更新
             if current_status in ("completed", "cancelled", "failed"):
+                self._terminal_gids.add(gid)
                 continue
 
             # 正在上传中的任务不更新下载状态
@@ -634,11 +645,13 @@ class TaskManager:
         return result
 
     async def _handle_download_complete(self, task_id: str, gid: str):
-        """下载完成后自动上传到 TelDrive"""
+        """下载完成后自动上传到 TelDrive（受并发限制）"""
         if gid in self._uploading_gids:
             return
         self._uploading_gids.add(gid)
 
+        # 等待上传信号量，限制同时上传的任务数
+        await self._upload_semaphore.acquire()
         try:
             task = await db.get_task(task_id)
             if not task or not task.get("local_path"):
@@ -702,6 +715,7 @@ class TaskManager:
             await db.update_task(task_id, status="failed", error=str(e))
             await self._broadcast_task_update(task_id)
         finally:
+            self._upload_semaphore.release()
             self._uploading_gids.discard(gid)
             self._upload_tasks.pop(task_id, None)
 
@@ -1058,7 +1072,8 @@ class TaskManager:
             return {"success": False, "message": str(e)}
 
     async def _retry_upload(self, task_id: str):
-        """仅重试上传步骤"""
+        """仅重试上传步骤（受并发限制）"""
+        await self._upload_semaphore.acquire()
         try:
             task = await db.get_task(task_id)
             if not task:
@@ -1095,6 +1110,7 @@ class TaskManager:
             await db.update_task(task_id, status="failed", error=str(e))
             await self._broadcast_task_update(task_id)
         finally:
+            self._upload_semaphore.release()
             self._upload_tasks.pop(task_id, None)
 
     async def delete_task(self, task_id: str) -> dict:
