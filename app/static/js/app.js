@@ -279,11 +279,10 @@ function handleWSMessage(msg) {
                     const cpuLabel = document.getElementById('stat-cpu-label');
                     cpuCard.style.display = '';
                     cpuUsage.textContent = `${cpu.percent.toFixed(1)}%`;
-                    if (cpu.throttled >= 2) {
-                        cpuLabel.textContent = 'CPU 过高 · 下载已全部暂停';
-                        cpuLabel.style.color = 'var(--error)';
-                    } else if (cpu.throttled === 1) {
-                        cpuLabel.textContent = 'CPU 偏高 · 部分下载已暂停';
+                    if (cpu.throttled >= 1 && cpu.speed_limit > 0) {
+                        const limitKB = cpu.speed_limit / 1024;
+                        const limitStr = limitKB >= 1024 ? `${(limitKB / 1024).toFixed(1)}MB/s` : `${Math.round(limitKB)}KB/s`;
+                        cpuLabel.textContent = `CPU 偏高 · 限速 ${limitStr}`;
                         cpuLabel.style.color = '#fb923c';
                     } else {
                         cpuLabel.textContent = `CPU (上限 ${cpu.limit}%)`;
