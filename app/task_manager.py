@@ -456,8 +456,8 @@ class TaskManager:
             # 获取 aria2 全部任务
             active = await self.aria2.tell_active() or []
             waiting = await self.aria2.tell_waiting(0, 1000) or []
-            # stopped 任务大部分已在 _terminal_gids 中缓存，少量拉取即可
-            stopped = await self.aria2.tell_stopped(0, 100) or []
+            # 分页拉取所有 stopped 任务，避免超过 100 条后遗漏
+            stopped = await self.aria2.tell_stopped_all() or []
         except Exception as e:
             # aria2 连接失败时静默跳过（仅每 30 秒打一次日志）
             logger.debug(f"aria2 轮询失败: {e}")

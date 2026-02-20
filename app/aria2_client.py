@@ -114,6 +114,20 @@ class Aria2Client:
         """获取已停止的下载（含完成和出错）"""
         return await self._call("aria2.tellStopped", offset, num)
 
+    async def tell_stopped_all(self, page_size: int = 500) -> list:
+        """分页获取所有已停止的下载，避免遗漏"""
+        all_stopped = []
+        offset = 0
+        while True:
+            batch = await self._call("aria2.tellStopped", offset, page_size)
+            if not batch:
+                break
+            all_stopped.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+        return all_stopped
+
     async def get_global_stat(self) -> dict:
         """获取全局统计"""
         return await self._call("aria2.getGlobalStat")
