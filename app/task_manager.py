@@ -80,6 +80,10 @@ class TaskManager:
         """重新加载配置并重建客户端"""
         self.config = load_config()
         self._init_clients()
+        # 重建上传并发信号量，使新配置生效
+        self._upload_semaphore = asyncio.Semaphore(
+            self.config["teldrive"].get("upload_concurrency", 4)
+        )
         # 异步同步 aria2 全局选项
         asyncio.create_task(self._apply_aria2_options())
 
@@ -1105,9 +1109,14 @@ class TaskManager:
         # 取消正在卡住的旧上传协程，清理 GID 去重标记
         self._cancel_existing_upload(task_id)
         # 也清理 aria2_gid 对应的 uploading_gids 标记
-        gid = task.get("aria2_gid", "")
-        if gid:
-            self._uploading_gids.discard(gid)
+        old_gid = task.get("aria2_gid", "")
+        if old_gid:
+            self._uploading_gids.discard(old_gid)
+            self._known_gids.discard(old_gid)
+            self._terminal_gids.discard(old_gid)
+
+        # 清除重试计数
+        self._upload_retry_counts.pop(task_id, None)
 
         # 如果本地文件/文件夹已存在，直接重试上传
         local_path = self._get_upload_path(task.get("local_path", ""))
@@ -1117,7 +1126,21 @@ class TaskManager:
             return {"success": True, "message": "正在重试上传"}
 
         # 否则需要重新下载
-        if not task.get("url"):
+        url = task.get("url", "")
+
+        # 如果数据库中没有 URL，尝试从 aria2 查询原始 URI
+        if not url and old_gid:
+            try:
+                status = await self.aria2.tell_status(old_gid)
+                files = status.get("files", [])
+                if files:
+                    uris = files[0].get("uris", [])
+                    if uris:
+                        url = uris[0].get("uri", "")
+            except Exception:
+                pass
+
+        if not url:
             return {"success": False, "message": "无法重试：缺少下载 URL 且本地文件不存在"}
 
         download_dir = self.config["aria2"].get("download_dir", "./downloads")
@@ -1126,19 +1149,21 @@ class TaskManager:
             options["out"] = task["filename"]
 
         try:
-            gid = await self.aria2.add_uri(task["url"], options)
-            # 从旧 GID 缓存中移除
-            old_gid = task.get("aria2_gid")
+            # 先尝试从 aria2 移除旧的失败任务
             if old_gid:
-                self._known_gids.discard(old_gid)
+                try:
+                    await self.aria2.remove(old_gid)
+                except Exception:
+                    pass
 
+            new_gid = await self.aria2.add_uri(url, options)
             await db.update_task(
-                task_id, status="downloading", aria2_gid=gid,
+                task_id, status="downloading", aria2_gid=new_gid,
                 download_progress=0, upload_progress=0,
                 download_speed="", upload_speed="",
-                error=None, local_path=None
+                error=None, local_path=None, url=url
             )
-            self._known_gids.add(gid)
+            self._known_gids.add(new_gid)
             await self._broadcast_task_update(task_id)
             return {"success": True, "message": "正在重新下载"}
         except Exception as e:
