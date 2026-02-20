@@ -45,6 +45,7 @@ class TaskManager:
         # CPU 限速：通过限制总下载速度控制 CPU 使用率
         self._cpu_speed_limit: int = 0  # 当前速度限制(bytes/sec)，0=无限制
         self._cpu_info: dict = {}
+        self._cpu_samples: list = []  # CPU 采样历史，用于滑动平均
 
     def _init_clients(self):
         """根据当前配置初始化客户端"""
@@ -139,6 +140,8 @@ class TaskManager:
                                          error="上传中断且本地文件不存在")
 
         self._running = True
+        # 预热 psutil.cpu_percent()，首次调用返回 0.0，需要先调一次建立基准
+        psutil.cpu_percent(interval=None)
         self._monitor_task = asyncio.create_task(self._monitor_loop())
         logger.info("任务管理器已启动")
 
@@ -347,14 +350,19 @@ class TaskManager:
             return
 
         try:
-            cpu_pct = psutil.cpu_percent(interval=None)
+            raw_pct = psutil.cpu_percent(interval=None)
+            # 滑动平均：保留最近 3 次采样（约 6 秒窗口），减少波动
+            self._cpu_samples.append(raw_pct)
+            if len(self._cpu_samples) > 3:
+                self._cpu_samples.pop(0)
+            cpu_pct = sum(self._cpu_samples) / len(self._cpu_samples)
             cpu_lower = cpu_limit * 0.75
 
             # 限流级别用于前端显示
             throttle_level = 0 if self._cpu_speed_limit == 0 else 1
 
             self._cpu_info = {
-                "percent": cpu_pct,
+                "percent": round(cpu_pct, 1),
                 "limit": cpu_limit,
                 "throttled": throttle_level,
                 "speed_limit": self._cpu_speed_limit
