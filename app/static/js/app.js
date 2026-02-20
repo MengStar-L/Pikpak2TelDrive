@@ -16,6 +16,11 @@ const state = {
     pollTimer: null
 };
 
+// 渲染批处理：合并同一帧内的多条 WS 消息，避免重复 DOM 操作
+let _pendingUpdates = {};      // taskId -> task data
+let _rafScheduled = false;
+let _dashboardTimer = null;
+
 // ============================================
 // 工具函数
 // ============================================
@@ -228,9 +233,22 @@ function handleWSMessage(msg) {
 
         case 'task_update':
             if (msg.data) {
-                state.tasks[msg.data.task_id] = msg.data;
-                renderTaskItem(msg.data);
-                updateDashboard();
+                const task = msg.data;
+                const oldTask = state.tasks[task.task_id];
+                state.tasks[task.task_id] = task;
+
+                // 纯进度变化 → 精确 DOM 更新（不重建 HTML）
+                if (oldTask && oldTask.status === task.status && !statusChanged(oldTask, task)) {
+                    fastProgressUpdate(task);
+                } else {
+                    // 状态变化 → 批量重建
+                    _pendingUpdates[task.task_id] = task;
+                    if (!_rafScheduled) {
+                        _rafScheduled = true;
+                        requestAnimationFrame(flushPendingUpdates);
+                    }
+                }
+                scheduleDashboardUpdate();
             }
             break;
 
@@ -437,6 +455,61 @@ function buildTaskHTML(task) {
                 ${actionsHTML}
             </div>
         </div>`;
+}
+
+// 检查是否只有进度变化（不含状态/文件名/按钮等变化）
+function statusChanged(oldTask, newTask) {
+    return oldTask.filename !== newTask.filename ||
+        oldTask.error !== newTask.error ||
+        oldTask.file_size !== newTask.file_size ||
+        oldTask.download_speed !== newTask.download_speed;
+}
+
+// 快速进度更新：只改进度条宽度和百分比文字，不重建 DOM
+function fastProgressUpdate(task) {
+    const el = document.getElementById(`task-${task.task_id}`);
+    if (!el) return;
+    const fills = el.querySelectorAll('.progress-fill');
+    const labels = el.querySelectorAll('.progress-labels');
+    if (task.status === 'downloading' || task.status === 'paused') {
+        if (fills[0]) fills[0].style.width = (task.download_progress || 0) + '%';
+        if (labels[0]) labels[0].lastElementChild.textContent = (task.download_progress || 0).toFixed(1) + '%';
+    } else if (task.status === 'uploading') {
+        if (fills[1]) fills[1].style.width = (task.upload_progress || 0) + '%';
+        if (labels[1]) labels[1].lastElementChild.textContent = (task.upload_progress || 0).toFixed(1) + '%';
+    }
+    // 也更新最近任务中的进度
+    const recentEl = document.getElementById(`recent-task-${task.task_id}`);
+    if (recentEl) {
+        const rFills = recentEl.querySelectorAll('.progress-fill');
+        const rLabels = recentEl.querySelectorAll('.progress-labels');
+        if (task.status === 'downloading' || task.status === 'paused') {
+            if (rFills[0]) rFills[0].style.width = (task.download_progress || 0) + '%';
+            if (rLabels[0]) rLabels[0].lastElementChild.textContent = (task.download_progress || 0).toFixed(1) + '%';
+        } else if (task.status === 'uploading') {
+            if (rFills[1]) rFills[1].style.width = (task.upload_progress || 0) + '%';
+            if (rLabels[1]) rLabels[1].lastElementChild.textContent = (task.upload_progress || 0).toFixed(1) + '%';
+        }
+    }
+}
+
+// 批量刷新：一帧内只执行一次完整重建
+function flushPendingUpdates() {
+    _rafScheduled = false;
+    const updates = _pendingUpdates;
+    _pendingUpdates = {};
+    for (const taskId in updates) {
+        renderTaskItem(updates[taskId]);
+    }
+}
+
+// 防抖的 dashboard 更新
+function scheduleDashboardUpdate() {
+    if (_dashboardTimer) return;
+    _dashboardTimer = setTimeout(() => {
+        _dashboardTimer = null;
+        updateDashboard();
+    }, 500);
 }
 
 function renderTaskItem(task) {
