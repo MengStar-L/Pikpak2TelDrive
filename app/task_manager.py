@@ -33,10 +33,10 @@ class TaskManager:
         self._terminal_gids: set = set()
         # 正在上传的 GID 集合，避免重复触发上传
         self._uploading_gids: set = set()
-        # 上传并发控制：限制同时上传的任务数，防止资源耗尽
-        self._upload_semaphore = asyncio.Semaphore(
-            self.config["teldrive"].get("upload_concurrency", 4)
-        )
+        # 上传并发控制：用活跃计数+Event 实现动态并发，支持热更新
+        self._active_uploads: int = 0
+        self._upload_slot_event = asyncio.Event()
+        self._upload_slot_event.set()  # 初始有空位
         # 上传协程追踪：task_id -> asyncio.Task，重试时可取消旧任务
         self._upload_tasks: dict = {}
         # 上传重试计数：task_id -> 已重试次数
@@ -80,10 +80,8 @@ class TaskManager:
         """重新加载配置并重建客户端"""
         self.config = load_config()
         self._init_clients()
-        # 重建上传并发信号量，使新配置生效
-        self._upload_semaphore = asyncio.Semaphore(
-            self.config["teldrive"].get("upload_concurrency", 4)
-        )
+        # upload_concurrency 变更后无需重建对象，
+        # _wait_upload_slot 每次实时读取 config 值
         # 异步同步 aria2 全局选项
         asyncio.create_task(self._apply_aria2_options())
 
@@ -669,14 +667,29 @@ class TaskManager:
         logger.info(f"[路径] {local_path} -> teldrive={result}")
         return result
 
+    async def _wait_upload_slot(self):
+        """等待可用的上传槽位（动态读取配置的并发数）"""
+        while True:
+            max_uploads = self.config["teldrive"].get("upload_concurrency", 4)
+            if self._active_uploads < max_uploads:
+                self._active_uploads += 1
+                return
+            self._upload_slot_event.clear()
+            await self._upload_slot_event.wait()
+
+    def _release_upload_slot(self):
+        """释放一个上传槽位"""
+        self._active_uploads = max(0, self._active_uploads - 1)
+        self._upload_slot_event.set()
+
     async def _handle_download_complete(self, task_id: str, gid: str):
         """下载完成后自动上传到 TelDrive（受并发限制）"""
         if gid in self._uploading_gids:
             return
         self._uploading_gids.add(gid)
 
-        # 等待上传信号量，限制同时上传的任务数
-        await self._upload_semaphore.acquire()
+        # 等待上传槽位（动态读取并发数配置）
+        await self._wait_upload_slot()
         try:
             task = await db.get_task(task_id)
             if not task or not task.get("local_path"):
@@ -740,7 +753,7 @@ class TaskManager:
             await db.update_task(task_id, status="failed", error=str(e))
             await self._broadcast_task_update(task_id)
         finally:
-            self._upload_semaphore.release()
+            self._release_upload_slot()
             self._uploading_gids.discard(gid)
             self._upload_tasks.pop(task_id, None)
 
@@ -1171,7 +1184,7 @@ class TaskManager:
 
     async def _retry_upload(self, task_id: str):
         """仅重试上传步骤（受并发限制）"""
-        await self._upload_semaphore.acquire()
+        await self._wait_upload_slot()
         try:
             task = await db.get_task(task_id)
             if not task:
