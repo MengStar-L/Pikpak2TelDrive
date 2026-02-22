@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.task_manager import task_manager
+from app.auth import is_auth_enabled, verify_token
 
 router = APIRouter()
 
@@ -9,6 +10,13 @@ router = APIRouter()
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     """WebSocket 连接，推送实时任务进度"""
+    # 认证检查
+    if is_auth_enabled():
+        token = ws.query_params.get("token")
+        if not token or not verify_token(token):
+            await ws.close(code=4001, reason="未认证")
+            return
+
     await ws.accept()
     task_manager.register_ws(ws)
     try:

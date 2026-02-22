@@ -24,3 +24,8 @@ auto_delete = true
 max_disk_usage = 0
 # CPU 使用率上限(%)，超过时自动降低并发。0 表示不限制
 cpu_limit = 85
+
+[auth]
+# Web 面板登录认证，留空则不启用认证
+username = ""
+password = ""

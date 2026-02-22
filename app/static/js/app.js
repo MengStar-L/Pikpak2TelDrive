@@ -13,7 +13,9 @@ const state = {
     reconnectTimer: null,
     reconnectAttempts: 0,
     heartbeatTimer: null,
-    pollTimer: null
+    pollTimer: null,
+    authToken: null,   // 认证 token，用于 WebSocket 连接
+    authEnabled: false  // 是否需要认证
 };
 
 // 渲染批处理：合并同一帧内的多条 WS 消息，避免重复 DOM 操作
@@ -68,6 +70,10 @@ async function apiCall(url, options = {}) {
             headers: { 'Content-Type': 'application/json' },
             ...options
         });
+        if (resp.status === 401) {
+            showLoginOverlay();
+            throw new Error('未登录');
+        }
         const data = await resp.json();
         if (!resp.ok) {
             throw new Error(data.detail || data.message || '请求失败');
@@ -150,7 +156,11 @@ async function testTelDrive() {
 
 function connectWS() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    let wsUrl = `${protocol}//${window.location.host}/ws`;
+    // 认证模式下带上 token
+    if (state.authToken) {
+        wsUrl += `?token=${encodeURIComponent(state.authToken)}`;
+    }
 
     try {
         state.ws = new WebSocket(wsUrl);
@@ -900,9 +910,115 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Escape') closeModal();
     });
 
+    // 登录表单提交
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('btn-login');
+        const errorEl = document.getElementById('login-error');
+        const username = document.getElementById('login-username').value.trim();
+        const password = document.getElementById('login-password').value;
+
+        btn.disabled = true;
+        btn.textContent = '登录中...';
+        errorEl.classList.remove('visible');
+
+        try {
+            const resp = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                state.authToken = data.token || null;
+                state.authEnabled = !!data.token;
+                hideLoginOverlay();
+                initApp();
+            } else {
+                errorEl.textContent = data.message || '登录失败';
+                errorEl.classList.add('visible');
+            }
+        } catch (err) {
+            errorEl.textContent = '网络错误，请重试';
+            errorEl.classList.add('visible');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '登录';
+        }
+    });
+
+    // 退出登录
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+        try {
+            await fetch('/api/logout', { method: 'POST' });
+        } catch (_) { }
+        state.authToken = null;
+        // 断开 WS 和轮询
+        if (state.ws) {
+            state.ws.close();
+            state.ws = null;
+        }
+        if (state.pollTimer) {
+            clearInterval(state.pollTimer);
+            state.pollTimer = null;
+        }
+        showLoginOverlay();
+    });
+
+    // 检查认证状态
+    checkAuth();
+});
+
+// ============================================
+// 认证相关
+// ============================================
+
+function showLoginOverlay() {
+    document.getElementById('login-overlay').classList.remove('hidden');
+    document.getElementById('login-username').focus();
+}
+
+function hideLoginOverlay() {
+    document.getElementById('login-overlay').classList.add('hidden');
+}
+
+async function checkAuth() {
+    try {
+        const resp = await fetch('/api/auth/check');
+        const data = await resp.json();
+
+        if (data.authenticated) {
+            // 已认证或无需认证
+            state.authEnabled = data.auth_enabled;
+            hideLoginOverlay();
+            if (data.auth_enabled) {
+                document.getElementById('btn-logout').style.display = '';
+            }
+            initApp();
+        } else {
+            // 需要登录
+            state.authEnabled = true;
+            showLoginOverlay();
+        }
+    } catch (e) {
+        // 网络错误，尝试直接初始化
+        hideLoginOverlay();
+        initApp();
+    }
+}
+
+function initApp() {
+    // 显示退出按钮
+    if (state.authEnabled) {
+        document.getElementById('btn-logout').style.display = '';
+    }
+
     // 连接 WebSocket
     connectWS();
 
     // 兜底轮询：每 3 秒通过 REST API 全量刷新，防止 WS 漏消息
-    state.pollTimer = setInterval(fetchAllTasks, 3000);
-});
+    if (!state.pollTimer) {
+        state.pollTimer = setInterval(fetchAllTasks, 3000);
+    }
+}

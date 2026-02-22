@@ -37,6 +37,10 @@ DEFAULT_CONFIG = {
         "auto_delete": True,
         "max_disk_usage": 0,
         "cpu_limit": 85
+    },
+    "auth": {
+        "username": "",
+        "password": ""
     }
 }
 
@@ -57,7 +61,7 @@ def _format_value(v) -> str:
 def _write_toml(config: dict) -> str:
     """生成 TOML 文本"""
     lines = []
-    section_order = ["server", "aria2", "teldrive", "general"]
+    section_order = ["server", "aria2", "teldrive", "general", "auth"]
     for s in config:
         if s not in section_order:
             section_order.append(s)

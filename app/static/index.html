@@ -12,6 +12,34 @@
 </head>
 
 <body>
+    <!-- 登录遮罩层 -->
+    <div class="login-overlay" id="login-overlay">
+        <div class="login-card">
+            <div class="logo">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                <span>Pikpak2TelDrive</span>
+            </div>
+            <p class="login-subtitle">请登录以继续</p>
+            <div class="login-error" id="login-error"></div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-username">用户名</label>
+                    <input type="text" id="login-username" placeholder="请输入用户名" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">密码</label>
+                    <input type="password" id="login-password" placeholder="请输入密码" autocomplete="current-password"
+                        required>
+                </div>
+                <button type="submit" class="btn btn-primary" id="btn-login">登录</button>
+            </form>
+        </div>
+    </div>
+
     <div class="app">
         <!-- 侧边栏 -->
         <aside class="sidebar">
@@ -60,6 +88,7 @@
                     <span id="ws-status-text">未连接</span>
                 </div>
                 <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:6px;">v2.7.0</div>
+                <button class="btn-logout" id="btn-logout" style="display:none">退出登录</button>
             </div>
         </aside>
 
