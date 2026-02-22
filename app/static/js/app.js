@@ -822,6 +822,60 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // 重试全部失败任务
+    document.getElementById('btn-retry-all-failed').addEventListener('click', async () => {
+        const failedCount = Object.values(state.tasks)
+            .filter(t => t.status === 'failed').length;
+        if (failedCount === 0) {
+            showToast('没有失败的任务', 'info');
+            return;
+        }
+        if (!confirm(`确认重试全部 ${failedCount} 个失败的任务？`)) return;
+        try {
+            const result = await apiCall('/api/tasks/retry-failed', { method: 'POST' });
+            showToast(result.message, 'success');
+            fetchAllTasks();
+        } catch (e) {
+            showToast('重试失败: ' + e.message, 'error');
+        }
+    });
+
+    // 暂停全部下载
+    document.getElementById('btn-pause-all-downloads').addEventListener('click', async () => {
+        const dlCount = Object.values(state.tasks)
+            .filter(t => t.status === 'downloading').length;
+        if (dlCount === 0) {
+            showToast('没有下载中的任务', 'info');
+            return;
+        }
+        if (!confirm(`确认暂停全部 ${dlCount} 个下载中的任务？`)) return;
+        try {
+            const result = await apiCall('/api/tasks/pause-downloads', { method: 'POST' });
+            showToast(result.message, 'success');
+            fetchAllTasks();
+        } catch (e) {
+            showToast('暂停失败: ' + e.message, 'error');
+        }
+    });
+
+    // 暂停全部上传
+    document.getElementById('btn-pause-all-uploads').addEventListener('click', async () => {
+        const ulCount = Object.values(state.tasks)
+            .filter(t => t.status === 'uploading').length;
+        if (ulCount === 0) {
+            showToast('没有上传中的任务', 'info');
+            return;
+        }
+        if (!confirm(`确认暂停全部 ${ulCount} 个上传中的任务？暂停后可通过重试恢复。`)) return;
+        try {
+            const result = await apiCall('/api/tasks/pause-uploads', { method: 'POST' });
+            showToast(result.message, 'success');
+            fetchAllTasks();
+        } catch (e) {
+            showToast('暂停失败: ' + e.message, 'error');
+        }
+    });
+
     // 弹窗
     document.getElementById('modal-close').addEventListener('click', closeModal);
     document.getElementById('modal-cancel').addEventListener('click', closeModal);

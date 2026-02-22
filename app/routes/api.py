@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException
 from app.models import TaskAddRequest, TaskResponse
 from app.task_manager import task_manager
+from app import database as db
 
 router = APIRouter(prefix="/api")
 
@@ -118,3 +119,53 @@ async def clear_all_tasks():
         await task_manager.delete_task(t["task_id"])
         count += 1
     return {"success": True, "message": f"已清除全部 {count} 个任务"}
+
+
+@router.post("/tasks/retry-failed")
+async def retry_all_failed_tasks():
+    """重试所有失败的任务"""
+    tasks = await task_manager.get_all_tasks()
+    count = 0
+    errors = []
+    for t in tasks:
+        if t["status"] == "failed":
+            result = await task_manager.retry_task(t["task_id"])
+            if result["success"]:
+                count += 1
+            else:
+                errors.append(f"{t.get('filename', t['task_id'])}: {result['message']}")
+    if errors:
+        return {"success": True, "message": f"已重试 {count} 个任务，{len(errors)} 个失败"}
+    return {"success": True, "message": f"已重试 {count} 个失败任务"}
+
+
+@router.post("/tasks/pause-downloads")
+async def pause_all_downloads():
+    """暂停所有下载中的任务"""
+    tasks = await task_manager.get_all_tasks()
+    count = 0
+    for t in tasks:
+        if t["status"] == "downloading":
+            result = await task_manager.pause_task(t["task_id"])
+            if result["success"]:
+                count += 1
+    return {"success": True, "message": f"已暂停 {count} 个下载任务"}
+
+
+@router.post("/tasks/pause-uploads")
+async def pause_all_uploads():
+    """暂停所有上传中的任务（取消上传协程，保留本地文件以便重试）"""
+    tasks = await task_manager.get_all_tasks()
+    count = 0
+    for t in tasks:
+        if t["status"] == "uploading":
+            task_id = t["task_id"]
+            # 取消上传协程但不删除本地文件
+            task_manager._cancel_existing_upload(task_id)
+            old_gid = t.get("aria2_gid", "")
+            if old_gid:
+                task_manager._uploading_gids.discard(old_gid)
+            await db.update_task(task_id, status="failed", error="用户手动暂停上传")
+            await task_manager._broadcast_task_update(task_id)
+            count += 1
+    return {"success": True, "message": f"已暂停 {count} 个上传任务"}

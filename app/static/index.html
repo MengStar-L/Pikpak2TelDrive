@@ -249,7 +249,34 @@
             <section class="page" id="page-tasks">
                 <div class="page-header">
                     <h1>任务列表</h1>
-                    <div style="display:flex;gap:8px">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-ghost" id="btn-retry-all-failed" title="重试所有失败的任务"
+                            style="color:var(--success, #4ade80)">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="1 4 1 10 7 10" />
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                            </svg>
+                            重试失败
+                        </button>
+                        <button class="btn btn-ghost" id="btn-pause-all-downloads" title="暂停所有下载中的任务"
+                            style="color:var(--info, #60a5fa)">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="6" y="4" width="4" height="16" />
+                                <rect x="14" y="4" width="4" height="16" />
+                            </svg>
+                            暂停下载
+                        </button>
+                        <button class="btn btn-ghost" id="btn-pause-all-uploads" title="暂停所有上传中的任务"
+                            style="color:var(--info, #60a5fa)">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="6" y="4" width="4" height="16" />
+                                <rect x="14" y="4" width="4" height="16" />
+                            </svg>
+                            暂停上传
+                        </button>
                         <button class="btn btn-ghost" id="btn-clear-completed" title="清除所有已完成任务">
                             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
                                 stroke-width="2">
