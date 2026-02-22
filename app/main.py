@@ -70,11 +70,13 @@ async def index():
 
 
 if __name__ == "__main__":
+    import os
     config = load_config()
     port = config.get("server", {}).get("port", 8000)
+    is_docker = os.environ.get("DOCKER", "0") == "1"
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=port,
-        reload=True
+        reload=not is_docker
     )

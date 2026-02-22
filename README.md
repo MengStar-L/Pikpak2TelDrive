@@ -19,13 +19,75 @@ aria2 下载 + TelDrive 上传中转服务 —— 通过 Web 面板管理下载�
 
 ## 部署步骤
 
-### 1. 下载项目
+### 方式一：Docker 部署（推荐）
+
+#### 使用 docker-compose
+
+1. 下载配置文件：
+
+```bash
+mkdir aria2teldrive && cd aria2teldrive
+wget https://raw.githubusercontent.com/MengStar-L/Aria2TelDrive/main/config.example.toml -O config.toml
+wget https://raw.githubusercontent.com/MengStar-L/Aria2TelDrive/main/docker-compose.yml
+```
+
+2. 编辑 `config.toml` 填入你的信息（或直接在 `docker-compose.yml` 中通过环境变量配置）
+
+3. 启动服务：
+
+```bash
+docker-compose up -d
+```
+
+#### 使用 docker run
+
+```bash
+docker run -d \
+  --name aria2teldrive \
+  --restart unless-stopped \
+  -p 8010:8010 \
+  -v $(pwd)/data:/data \
+  -v $(pwd)/downloads:/downloads \
+  -e TZ=Asia/Shanghai \
+  mengstarl/aria2teldrive:latest
+```
+
+#### 卷映射说明
+
+| 容器路径 | 说明 | 建议 |
+|---------|------|------|
+| `/data` | 配置和数据目录，包含 `config.toml` 和 `tasks.db` | **必须映射**，确保配置和任务记录持久化 |
+| `/downloads` | 下载文件临时存放目录 | **必须映射**，确保下载文件可访问 |
+
+> **提示**：映射 `/data` 目录后，首次启动会自动生成默认 `config.toml`，编辑后重启容器即可。也可以直接将 `config.toml` 放入映射的 `data` 目录。
+
+#### 环境变量配置
+
+所有配置项均支持通过环境变量覆盖，格式为 `SECTION_KEY` 全大写。优先级：**环境变量 > config.toml > 默认值**。
+
+完整变量列表见 [docker-compose.yml](docker-compose.yml) 中的注释，常用变量：
+
+```bash
+TELDRIVE_API_HOST=http://your-teldrive:7888
+TELDRIVE_ACCESS_TOKEN=your_jwt_token
+TELDRIVE_CHANNEL_ID=123456
+ARIA2_MAX_CONCURRENT=3
+GENERAL_AUTO_DELETE=true
+```
+
+> **注意**：Docker 镜像已内置 aria2，无需单独安装。`config.toml` 中 aria2 RPC 地址保持默认 `http://localhost:6800` 即可。
+
+---
+
+### 方式二：手动部署
+
+#### 1. 下载项目
 
 ```bash
 git clone https://github.com/MengStar-L/Aria2TelDrive.git /opt/Aria2TelDrive
 ```
 
-### 2. 创建虚拟环境并安装依赖
+#### 2. 创建虚拟环境并安装依赖
 
 ```bash
 cd /opt/Aria2TelDrive
@@ -34,7 +96,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. 创建配置文件
+#### 3. 创建配置文件
 
 ```bash
 cp config.example.toml config.toml
@@ -75,7 +137,7 @@ max_disk_usage = 0                  # 磁盘使用上限(GB)，达90%限制并�
 cpu_limit = 85                      # CPU 使用率上限(%)，超过时限制下载速度，0=不限制
 ```
 
-### 4. 确保 aria2 已运行
+#### 4. 确保 aria2 已运行
 
 本程序通过 RPC 连接外部 aria2 实例，请确保 aria2 已启动并开启 RPC：
 
@@ -83,7 +145,7 @@ cpu_limit = 85                      # CPU 使用率上限(%)，超过时限制�
 aria2c --enable-rpc --rpc-listen-all=true --rpc-listen-port=6800
 ```
 
-### 5. 运行
+#### 5. 运行
 
 ```bash
 source /opt/Aria2TelDrive/venv/bin/activate
@@ -93,7 +155,7 @@ python app/main.py
 
 访问 `http://localhost:8010` 即可打开管理面板。
 
-### 6. 注册为系统服务（可选）
+#### 6. 注册为系统服务（可选）
 
 复制项目中的服务文件：
 
@@ -108,7 +170,7 @@ systemctl daemon-reload
 systemctl enable --now aria2teldrive
 ```
 
-### 7. 确认运行状态
+#### 7. 确认运行状态
 
 ```bash
 systemctl status aria2teldrive

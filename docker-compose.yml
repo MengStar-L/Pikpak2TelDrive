@@ -1,0 +1,35 @@
+services:
+  aria2teldrive:
+    image: mengstarl/aria2teldrive:latest
+    container_name: aria2teldrive
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    volumes:
+      # /data 包含 config.toml 和 tasks.db，映射后数据持久化
+      - ./data:/data
+      - ./downloads:/downloads
+    environment:
+      - TZ=Asia/Shanghai
+      # 以下环境变量可覆盖 config.toml 中的配置（优先级: 环境变量 > config.toml > 默认值）
+      # --- server ---
+      # - SERVER_PORT=8010
+      # --- aria2 ---
+      # - ARIA2_RPC_URL=http://localhost
+      # - ARIA2_RPC_PORT=6800
+      # - ARIA2_RPC_SECRET=
+      # - ARIA2_MAX_CONCURRENT=3
+      # - ARIA2_DOWNLOAD_DIR=/downloads
+      # --- teldrive ---
+      # - TELDRIVE_API_HOST=http://localhost:7888
+      # - TELDRIVE_ACCESS_TOKEN=your_jwt_token
+      # - TELDRIVE_CHANNEL_ID=0
+      # - TELDRIVE_CHUNK_SIZE=500M
+      # - TELDRIVE_UPLOAD_CONCURRENCY=4
+      # - TELDRIVE_UPLOAD_DIR=
+      # - TELDRIVE_TARGET_PATH=/
+      # --- general ---
+      # - GENERAL_MAX_RETRIES=3
+      # - GENERAL_AUTO_DELETE=true
+      # - GENERAL_MAX_DISK_USAGE=0
+      # - GENERAL_CPU_LIMIT=85

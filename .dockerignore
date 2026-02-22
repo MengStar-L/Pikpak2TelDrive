@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+venv/
+tasks.db
+config.toml
+config.json
+downloads/
+.env
+REQUIREMENTS.md
+*.service
+*.db
+.gemini/

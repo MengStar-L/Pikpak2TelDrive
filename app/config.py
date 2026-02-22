@@ -8,7 +8,7 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib  # Python < 3.11 回退
 
-CONFIG_FILE = Path(__file__).parent.parent / "config.toml"
+CONFIG_FILE = Path(os.environ.get("CONFIG_PATH", Path(__file__).parent.parent / "config.toml"))
 
 DEFAULT_CONFIG = {
     "server": {
@@ -73,22 +73,65 @@ def _write_toml(config: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _cast_value(value_str: str, default_value):
+    """根据默认值的类型，将环境变量字符串转为对应类型"""
+    if isinstance(default_value, bool):
+        return value_str.lower() in ("true", "1", "yes")
+    if isinstance(default_value, int):
+        return int(value_str)
+    if isinstance(default_value, float):
+        return float(value_str)
+    return value_str
+
+
+def _apply_env_overrides(config: dict) -> dict:
+    """用环境变量覆盖配置项，格式: SECTION_KEY（全大写）
+    
+    例如:
+        SERVER_PORT=8010
+        ARIA2_RPC_URL=http://localhost
+        ARIA2_RPC_PORT=6800
+        ARIA2_MAX_CONCURRENT=3
+        TELDRIVE_API_HOST=http://localhost:7888
+        TELDRIVE_ACCESS_TOKEN=xxx
+        TELDRIVE_CHANNEL_ID=123
+        TELDRIVE_UPLOAD_CONCURRENCY=4
+        GENERAL_AUTO_DELETE=true
+        GENERAL_CPU_LIMIT=85
+    """
+    for section, values in config.items():
+        if not isinstance(values, dict):
+            continue
+        for key, default_value in values.items():
+            env_name = f"{section}_{key}".upper()
+            env_val = os.environ.get(env_name)
+            if env_val is not None:
+                try:
+                    config[section][key] = _cast_value(env_val, default_value)
+                except (ValueError, TypeError):
+                    pass  # 转换失败则跳过，保留原值
+    return config
+
+
 def load_config() -> dict:
-    """加载配置，如果配置文件不存在则创建默认配置"""
+    """加载配置，优先级: 环境变量 > config.toml > 默认值"""
     if not CONFIG_FILE.exists():
         save_config(DEFAULT_CONFIG)
-        return DEFAULT_CONFIG.copy()
-    try:
-        with open(CONFIG_FILE, "rb") as f:
-            config = tomllib.load(f)
-        # 合并默认值（确保新增字段有默认值）
-        merged = {k: dict(v) for k, v in DEFAULT_CONFIG.items()}
-        for section in merged:
-            if section in config:
-                merged[section].update(config[section])
-        return merged
-    except (Exception, IOError):
-        return DEFAULT_CONFIG.copy()
+        config = DEFAULT_CONFIG.copy()
+    else:
+        try:
+            with open(CONFIG_FILE, "rb") as f:
+                config = tomllib.load(f)
+            # 合并默认值（确保新增字段有默认值）
+            merged = {k: dict(v) for k, v in DEFAULT_CONFIG.items()}
+            for section in merged:
+                if section in config:
+                    merged[section].update(config[section])
+            config = merged
+        except (Exception, IOError):
+            config = DEFAULT_CONFIG.copy()
+    # 环境变量覆盖
+    return _apply_env_overrides(config)
 
 
 def save_config(config: dict) -> None:
